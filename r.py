@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One batch slice: fetch the pack, render frames, return the result. Quiet by design."""
-import json, os, subprocess, sys, tarfile, time, urllib.parse, urllib.request
+import json, os, subprocess, sys, tarfile, time, urllib.error, urllib.parse, urllib.request
 
 J = json.load(open('job.json')); I = int(sys.argv[1]); W = '/tmp/w'; Q = dict(stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 STAGE = ['start']
@@ -15,9 +15,11 @@ _T = {'t': '', 'e': 0}
 
 def tok():
     if time.time() > _T['e'] - 120:
-        b = urllib.parse.urlencode({'client_id': os.environ['GDRIVE_CLIENT_ID'], 'client_secret': os.environ['GDRIVE_CLIENT_SECRET'],
-                                    'refresh_token': os.environ['GDRIVE_REFRESH_TOKEN'], 'grant_type': 'refresh_token'}).encode()
-        d = json.load(urllib.request.urlopen('https://oauth2.googleapis.com/token', b, timeout=60))
+        v = {k: os.environ.get('GDRIVE_' + k, '').strip().split('=', 1)[-1].strip().strip('"') for k in ('CLIENT_ID', 'CLIENT_SECRET', 'REFRESH_TOKEN')}
+        b = urllib.parse.urlencode({'client_id': v['CLIENT_ID'], 'client_secret': v['CLIENT_SECRET'], 'refresh_token': v['REFRESH_TOKEN'], 'grant_type': 'refresh_token'}).encode()
+        try: d = json.load(urllib.request.urlopen('https://oauth2.googleapis.com/token', b, timeout=60))
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f'login {e.code} ' + json.loads(e.read() or b'{}').get('error', '') + ' lengths ' + ','.join(str(len(x)) for x in v.values()))
         _T.update(t=d['access_token'], e=time.time() + int(d.get('expires_in', 3600)))
     return {'Authorization': 'Bearer ' + _T['t']}
 
@@ -25,6 +27,10 @@ def tok():
 def req(url, data=None, h=None, m=None, tries=6):
     for k in range(tries):
         try: return urllib.request.urlopen(urllib.request.Request(url, data, {**tok(), **(h or {})}, method=m), timeout=600)
+        except RuntimeError: raise
+        except urllib.error.HTTPError as e:
+            if k == tries - 1 or e.code in (400, 401, 403, 404): raise RuntimeError(f'drive {e.code}')
+            time.sleep(2 ** k)
         except Exception:
             if k == tries - 1: raise
             time.sleep(2 ** k)
@@ -68,4 +74,4 @@ def main():
 
 try: main(); print('ok')
 except SystemExit: print('fail', STAGE[0]); sys.exit(1)
-except Exception as e: print('fail', STAGE[0], type(e).__name__, str(e)[-300:] if STAGE[0] in ('deps', 'browser') else ''); sys.exit(1)
+except Exception as e: print('fail', STAGE[0], type(e).__name__, str(e)[-300:] if STAGE[0] in ('deps', 'browser') or isinstance(e, RuntimeError) else ''); sys.exit(1)
