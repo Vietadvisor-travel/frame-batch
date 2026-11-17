@@ -67,8 +67,11 @@ def main():
     for k in range(3):
         cmd = ['npx', 'remotion', 'render', 'b', 'Story', out, '--props=' + open(f'{W}/props.json').read(), f'--frames={a}-{b}', '--muted',
                f'--crf={M["crf"]}', f'--concurrency={max(1, M["conc"] - k)}', '--timeout=120000', '--log=error', f'--browser-executable={exe}']
-        if subprocess.run(cmd, cwd=W, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 and frames(out) == b - a + 1: break
-    else: sys.exit(1)
+        r = subprocess.run(cmd, cwd=W, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if r.returncode == 0 and frames(out) == b - a + 1: break
+    else:
+        slug = json.load(open(f'{W}/props.json')).get('slug', '#')
+        raise RuntimeError(('exe ok ' if os.path.exists(exe) else 'no exe ') + r.stdout.decode('utf-8', 'replace')[-400:].replace(W, '.').replace(slug, 'x'))
     STAGE[0] = 'send'; send(out, f'{I}.mp4', J['o'])
 
 
