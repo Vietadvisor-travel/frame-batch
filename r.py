@@ -2,7 +2,14 @@
 """One batch slice: fetch the pack, render frames, return the result. Quiet by design."""
 import json, os, subprocess, sys, tarfile, time, urllib.parse, urllib.request
 
-J = json.load(open('job.json')); I = int(sys.argv[1]); W = '/tmp/w'; Q = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+J = json.load(open('job.json')); I = int(sys.argv[1]); W = '/tmp/w'; Q = dict(stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+STAGE = ['start']
+
+
+def sh(cmd, **k):
+    r = subprocess.run(cmd, cwd=W, **Q, **k)
+    if r.returncode: raise RuntimeError(f'exit {r.returncode}: ' + r.stderr.decode('utf-8', 'replace')[-300:].replace(W, '.'))
+    return r
 _T = {'t': '', 'e': 0}
 
 
@@ -44,20 +51,21 @@ def frames(p):
 
 
 def main():
-    os.makedirs(W, exist_ok=True); fetch(J['p'], '/tmp/p.tgz'); tarfile.open('/tmp/p.tgz').extractall(W)
+    os.makedirs(W, exist_ok=True); STAGE[0] = 'fetch'; fetch(J['p'], '/tmp/p.tgz'); tarfile.open('/tmp/p.tgz').extractall(W)
     M = json.load(open(f'{W}/meta.json'))
-    subprocess.run(['npm', 'ci', '--no-audit', '--no-fund'], cwd=W, check=True, **Q)
-    subprocess.run(['npx', '-y', f'playwright@{M["pw"]}', 'install', '--with-deps', 'chromium-headless-shell'], cwd=W, check=True, **Q)
+    STAGE[0] = 'deps'; sh(['npm', 'ci', '--no-audit', '--no-fund'])
+    STAGE[0] = 'browser'; sh(['npx', '-y', f'playwright@{M["pw"]}', 'install', '--with-deps', 'chromium-headless-shell'])
     exe = os.path.expanduser(f'~/.cache/ms-playwright/{M["shell"]}/chrome-headless-shell-linux64/chrome-headless-shell')
     a = I * M['step']; b = min(M['n'] - 1, a + M['step'] - 1); out = f'{W}/{I}.mp4'
+    STAGE[0] = 'render'
     for k in range(3):
         cmd = ['npx', 'remotion', 'render', 'b', 'Story', out, '--props=' + open(f'{W}/props.json').read(), f'--frames={a}-{b}', '--muted',
                f'--crf={M["crf"]}', f'--concurrency={max(1, M["conc"] - k)}', '--timeout=120000', '--log=error', f'--browser-executable={exe}']
-        if subprocess.run(cmd, cwd=W, **Q).returncode == 0 and frames(out) == b - a + 1: break
+        if subprocess.run(cmd, cwd=W, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 and frames(out) == b - a + 1: break
     else: sys.exit(1)
-    send(out, f'{I}.mp4', J['o'])
+    STAGE[0] = 'send'; send(out, f'{I}.mp4', J['o'])
 
 
 try: main(); print('ok')
-except SystemExit: print('fail'); sys.exit(1)
-except Exception: print('fail'); sys.exit(1)
+except SystemExit: print('fail', STAGE[0]); sys.exit(1)
+except Exception as e: print('fail', STAGE[0], type(e).__name__, str(e)[-300:] if STAGE[0] in ('deps', 'browser') else ''); sys.exit(1)
