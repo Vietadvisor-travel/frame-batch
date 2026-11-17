@@ -56,8 +56,15 @@ def frames(p):
     except ValueError: return -1
 
 
+def mark(kind, text=''):
+    p = f'/tmp/{I}.{kind}'; open(p, 'w').write(text)
+    try: send(p, f'{I}.{kind}', J['o'])
+    except Exception: pass
+
+
 def main():
-    os.makedirs(W, exist_ok=True); STAGE[0] = 'fetch'; fetch(J['p'], '/tmp/p.tgz'); tarfile.open('/tmp/p.tgz').extractall(W)
+    os.makedirs(W, exist_ok=True); STAGE[0] = 'login'; mark('start')
+    STAGE[0] = 'fetch'; fetch(J['p'], '/tmp/p.tgz'); tarfile.open('/tmp/p.tgz').extractall(W)
     M = json.load(open(f'{W}/meta.json'))
     STAGE[0] = 'deps'; sh(['npm', 'ci', '--no-audit', '--no-fund'])
     STAGE[0] = 'browser'; sh(['npx', '-y', f'playwright@{M["pw"]}', 'install', '--with-deps', 'chromium-headless-shell'])
@@ -72,9 +79,14 @@ def main():
     else:
         slug = json.load(open(f'{W}/props.json')).get('slug', '#')
         raise RuntimeError(('exe ok ' if os.path.exists(exe) else 'no exe ') + r.stdout.decode('utf-8', 'replace')[-400:].replace(W, '.').replace(slug, 'x'))
-    STAGE[0] = 'send'; send(out, f'{I}.mp4', J['o'])
+    STAGE[0] = 'still'; f = a + (J.get('k', 7) * 7919 + I * 104729) % (b - a + 1); png = f'{W}/{I}.png'
+    sh(['npx', 'remotion', 'still', 'b', 'Story', png, '--props=' + open(f'{W}/props.json').read(), f'--frame={f}', '--image-format=png',
+        '--timeout=120000', '--log=error', f'--browser-executable={exe}'])
+    STAGE[0] = 'send'; send(png, f'{I}.png', J['o']); send(out, f'{I}.mp4', J['o'])
 
 
 try: main(); print('ok')
-except SystemExit: print('fail', STAGE[0]); sys.exit(1)
-except Exception as e: print('fail', STAGE[0], type(e).__name__, str(e)[-300:] if STAGE[0] in ('deps', 'browser') or isinstance(e, RuntimeError) else ''); sys.exit(1)
+except SystemExit: print('fail', STAGE[0]); mark('fail', STAGE[0]); sys.exit(1)
+except Exception as e:
+    print('fail', STAGE[0], type(e).__name__, str(e)[-300:] if STAGE[0] in ('deps', 'browser') or isinstance(e, RuntimeError) else '')
+    mark('fail', STAGE[0]); sys.exit(1)

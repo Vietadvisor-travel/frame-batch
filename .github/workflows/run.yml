@@ -22,7 +22,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.m != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -33,6 +33,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: deps-${{ hashFiles('r.py') }}-1
+          restore-keys: deps-
       - run: python3 r.py ${{ matrix.i }}
         env:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
