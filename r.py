@@ -85,8 +85,12 @@ def main():
     STAGE[0] = 'send'; send(png, f'{I}.png', J['o']); send(out, f'{I}.mp4', J['o'])
 
 
+# a failed slice is REPORTED (the `.fail` marker) and the job still ends green: the caller renders that slice itself, and a red run
+# would only send alarm e-mails. A batch whose pack is gone (the caller already moved on) simply ends.
 try: main(); print('ok')
-except SystemExit: print('fail', STAGE[0]); mark('fail', STAGE[0]); sys.exit(1)
+except SystemExit: print('fail', STAGE[0]); mark('fail', STAGE[0])
 except Exception as e:
-    print('fail', STAGE[0], type(e).__name__, str(e)[-300:] if STAGE[0] in ('deps', 'browser') or isinstance(e, RuntimeError) else '')
-    mark('fail', STAGE[0]); sys.exit(1)
+    if STAGE[0] == 'fetch' and 'drive 404' in str(e): print('batch withdrawn')
+    else:
+        print('fail', STAGE[0], type(e).__name__, str(e)[-300:] if STAGE[0] in ('deps', 'browser') or isinstance(e, RuntimeError) else '')
+        mark('fail', STAGE[0])
