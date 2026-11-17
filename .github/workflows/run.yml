@@ -1,0 +1,40 @@
+name: run
+run-name: batch
+on:
+  push:
+    branches: [main]
+    paths: [job.json]
+permissions:
+  contents: read
+concurrency:
+  group: batch
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      m: ${{ steps.p.outputs.m }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        run: echo "m=$(python3 -c 'import json;print(json.dumps(json.load(open("job.json"))["todo"]))')" >> "$GITHUB_OUTPUT"
+  go:
+    needs: plan
+    if: needs.plan.outputs.m != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        i: ${{ fromJson(needs.plan.outputs.m) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python3 r.py ${{ matrix.i }}
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
